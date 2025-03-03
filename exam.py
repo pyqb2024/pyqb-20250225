@@ -45,7 +45,8 @@ import pymc as pm   # type: ignore
 #
 #
 
-pass
+howell = pd.read_csv("Howell1.csv", sep=';')
+howell.head()
 
 # ### Exercise 2 (max 6 points)
 #
@@ -53,13 +54,29 @@ pass
 # The `parent` column must be populated by randomly selecting from all individuals with an age greater than the child's age plus 15
 # years, but less then the child's age plus 50. To illustrate this, for the male individual in the row 3 (aged 41), any of the 66 individuals aged between 56 and 91 (extremes included) could be chosen as a parent. In the random selection process, each potential candidate should have an equal probability of being selected. If no individual old enough exists, the parent should be set to -1.
 
-pass
+# +
+howell['parent'] = -1
+for r in howell.index:
+    min_age = howell.loc[r]['age'] + 15
+    max_age = howell.loc[r]['age'] + 50
+    elders = howell[(howell['age'] >= min_age) & (howell['age'] <= max_age)].index
+    if len(elders) > 0:
+        howell.loc[r,'parent'] = np.random.choice(elders)
+
+assert all(howell.query('parent == -1')['age'] > (howell['age'].max() - 50))
+
+# -
+
+howell['parent'].describe()
 
 # ### Exercise 3 (max 5 points)
 #
 # Compute the average age difference between an individual and their parent (ignore -1 parents). To get the full marks do not use explicit loops.
 
-pass
+with_parents = howell.query('parent > -1').copy()
+with_parents['parent_age'] = with_parents['parent'].apply(lambda i: howell.loc[i, 'age'])
+(with_parents['parent_age'] - with_parents['age']).mean() 
+
 
 # ### Exercise 4 (max 6 points)
 #
@@ -67,28 +84,81 @@ pass
 #
 # To get the full marks, you should declare correctly the type hints and add a doctest string.
 
-pass
+def swap_consecutives(s: pd.Series) -> pd.Series:
+    """Swap consecutive values, return the new series
+
+    >>> (swap_consecutives(pd.Series([1,2,3,4,5])) == pd.Series([2,1,4,3,5])).all()
+    True
+    """
+    res = s.copy()
+    for i in range(0, len(s) - 1, 2):
+        res.iloc[i], res.iloc[i+1] = s.iloc[i+1], s.iloc[i]
+    return res            
+    
+
+
+import doctest
+doctest.testmod()
 
 # ### Exercise 5 (max 3 points)
 #
 # Make a scatter plot with the age of each individual and the age of their parent (ignore -1 parents). Put proper labels on the axis.
 
-pass
+fig, ax = plt.subplots()
+ax.scatter(with_parents['age'], with_parents['parent'].apply(lambda i: howell.loc[i, 'age']))
+ax.set_xlabel('Age')
+_  = ax.set_ylabel('Parent age')
 
 # ### Exercise 6 (max 4 points)
 #
 # Consider only the individuals with a parent of the same sex. On the same axis, make a picture with two scatter plots with different colors, one per sex, of the height of the parent and the height of the child. Put proper labels and a legend.
 
-pass
+# +
+with_parents['parent_male'] = with_parents['parent'].map(lambda x: howell.loc[x, 'male'])
+with_parents['parent_height'] = with_parents['parent'].map(lambda x: howell.loc[x, 'height'])
+
+male_male = with_parents[(with_parents['male'] == 1) & (with_parents['parent_male'] == 1)]
+female_female = with_parents[(with_parents['male'] == 0) & (with_parents['parent_male'] == 0)]
+# -
+
+fig, ax = plt.subplots()
+ax.scatter(male_male['parent_height'], male_male['height'], label='Male-Male')
+ax.scatter(female_female['parent_height'], female_female['height'], label='Female-Female')
+ax.legend()
+ax.set_xlabel('Parent height')
+_ = ax.set_ylabel('Height')
+
 
 # ### Exercise 7 (max 4 points)
 #
-# Add a column `siblings` with the number of child with the same parent as the current individual (consider individual with a -1 parent as siblings). To get the full marks do not use explicit loops.
+# Add a column `siblings` with the number of children with the same parent as the current individual (consider individuals with a -1 parent as siblings). To get the full marks do not use explicit loops.
 
-pass
+# +
+children = howell.groupby('parent')['age'].count()
+
+howell['siblings'] = howell['parent'].map(lambda p: children.loc[p])
+
+howell.head()
+# -
 
 # ### Exercise 8 (max 4 points)
 #
 # Consider this statistical model: the height of individual with a parent (different from -1) is normal with an unknown mean $\alpha + \beta\cdot H_p$, where $H_p$ is the height of the parent, and an unknown standard deviation $\sigma$. Your *a priori* estimation for both $\alpha$ and $\beta$ distribution is a normal distibution with mean 0 and std deviation 5; your *a priori* estimation for $\sigma$ exponential distribution with $\lambda=1$. Use PyMC to sample the posterior distributions after having seen the actual values for the heights. Plot the posterior distributions of the variables.
 
-pass
+with pm.Model():
+
+    a = pm.Normal('alpha', 0, 5)
+    b = pm.Normal('beta', 0, 5)
+    s = pm.Exponential('sigma', 1)
+
+    pm.Normal('height', a + b*with_parents['parent_height'], s, observed=with_parents['height'])
+
+    idata = pm.sample()
+
+# +
+import arviz as az
+
+_ = az.plot_posterior(idata)
+# -
+
+
